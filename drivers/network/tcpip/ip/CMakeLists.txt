@@ -1,4 +1,6 @@
 
+add_subdirectory(lwip)
+
 if(ARCH STREQUAL "i386")
     add_asm_files(ip_asm network/i386/checksum.S)
 endif()
@@ -34,6 +36,7 @@ add_library(ip OBJECT ${SOURCE} ${ip_asm})
 target_link_libraries(ip lwip)
 
 target_include_directories(ip BEFORE
-    PRIVATE ${REACTOS_SOURCE_DIR}/drivers/network/tcpip/include)
+    PRIVATE ${REACTOS_SOURCE_DIR}/drivers/network/tcpip/include
+    PRIVATE include)
 
-add_pch(ip precomp.h SOURCE)
+add_pch(ip include/precomp.h SOURCE)

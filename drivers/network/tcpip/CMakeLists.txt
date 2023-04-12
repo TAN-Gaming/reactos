@@ -1,5 +1,4 @@
 
-add_subdirectory(lwip)
 add_subdirectory(ip)
 
 add_definitions(

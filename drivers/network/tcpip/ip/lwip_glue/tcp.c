@@ -1,7 +1,7 @@
 #include <debug.h>
 #include <lwip/tcpip.h>
 
-#include "lwip_glue.h"
+#include <lwip_glue/lwip_glue.h>
 
 static const char * const tcp_state_str[] = {
   "CLOSED",
