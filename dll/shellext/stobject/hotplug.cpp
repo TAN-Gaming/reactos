@@ -12,6 +12,7 @@
 #include <dbt.h>
 #include <cfgmgr32.h>
 #include <shlwapi.h>
+#include <mmsystem.h>
 
 #define DISPLAY_NAME_LEN 40
 
@@ -254,6 +255,10 @@ HotplugDeviceTimer(
         pSysTray->NotifyIcon(NIM_MODIFY, ID_ICON_HOTPLUG, g_hIconHotplug, g_strHotplugTooltip, NIS_HIDDEN);
 }
 
+static void PlayEventSound(_In_ LPCWSTR lpEventName)
+{
+    PlaySoundW(lpEventName, NULL, SND_ALIAS | SND_ASYNC | SND_NODEFAULT);
+}
 
 HRESULT STDMETHODCALLTYPE Hotplug_Message(_In_ CSysTray * pSysTray, UINT uMsg, WPARAM wParam, LPARAM lParam, LRESULT &lResult)
 {
@@ -340,6 +345,7 @@ HRESULT STDMETHODCALLTYPE Hotplug_Message(_In_ CSysTray * pSysTray, UINT uMsg, W
                     break;
 
                 case DBT_DEVICEARRIVAL:
+                    PlayEventSound(L"DeviceConnect");
                     break;
                 case DBT_DEVICEQUERYREMOVE:
                     break;
@@ -349,7 +355,7 @@ HRESULT STDMETHODCALLTYPE Hotplug_Message(_In_ CSysTray * pSysTray, UINT uMsg, W
                     WCHAR strInfo[128];
                     swprintf(strInfo, L"The %wS can now be safely removed from the system.", g_strMenuSel);
                     NotifyBalloon(pSysTray, L"Safe to Remove Hardware", strInfo);
-
+                    PlayEventSound(L"DeviceDisconnect");
                     lResult = true;
                     break;
                 case DBT_DEVICEREMOVEPENDING:
