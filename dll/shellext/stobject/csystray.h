@@ -31,6 +31,7 @@ class CSysTray :
     DWORD dwServicesEnabled;
     UINT wm_SHELLHOOK;
     UINT wm_DESTROYWINDOW;
+    HDEVNOTIFY hDevNotify;
 
     static DWORD WINAPI s_SysTrayThreadProc(PVOID param);
     HRESULT SysTrayMessageLoop();
@@ -47,6 +48,9 @@ class CSysTray :
     HRESULT ShutdownNetShell();
 
     VOID GetServicesEnabled();
+
+    VOID InitDevNotify();
+    VOID ShutdownDevNotify();
 
 public:
     HRESULT NotifyIcon(INT code, UINT uId, HICON hIcon, LPCWSTR szTip, DWORD dwstate = 0);

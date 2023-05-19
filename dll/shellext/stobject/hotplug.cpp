@@ -9,7 +9,6 @@
 #include "precomp.h"
 
 #include <atlsimpcoll.h>
-#include <dbt.h>
 #include <cfgmgr32.h>
 #include <shlwapi.h>
 #include <mmsystem.h>

@@ -22,6 +22,7 @@
 #include <atlstr.h>
 #include <setupapi.h>
 #include <shellapi.h>
+#include <dbt.h>
 
 #include <wine/debug.h>
 WINE_DEFAULT_DEBUG_CHANNEL(stobject);

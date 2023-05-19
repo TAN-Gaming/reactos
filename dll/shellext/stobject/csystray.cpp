@@ -20,7 +20,9 @@ SysTrayIconHandlers_t g_IconHandlers [] = {
 };
 const int g_NumIcons = _countof(g_IconHandlers);
 
-CSysTray::CSysTray() : dwServicesEnabled(0)
+CSysTray::CSysTray() :
+    dwServicesEnabled(0),
+    hDevNotify(NULL)
 {
     wm_SHELLHOOK = RegisterWindowMessageW(L"SHELLHOOK");
     wm_DESTROYWINDOW = RegisterWindowMessageW(L"CSysTray_DESTROY");
@@ -184,6 +186,23 @@ HRESULT CSysTray::ProcessIconMessage(UINT uMsg, WPARAM wParam, LPARAM lParam, LR
     return S_FALSE;
 }
 
+VOID CSysTray::InitDevNotify()
+{
+    DEV_BROADCAST_DEVICEINTERFACE_W dbdi;
+
+    ZeroMemory(&dbdi, sizeof(dbdi));
+    dbdi.dbcc_size = sizeof(dbdi);
+    dbdi.dbcc_devicetype = DBT_DEVTYP_DEVICEINTERFACE;
+
+    this->hDevNotify = RegisterDeviceNotificationW(m_hWnd, &dbdi, DEVICE_NOTIFY_WINDOW_HANDLE | DEVICE_NOTIFY_ALL_INTERFACE_CLASSES);
+}
+
+VOID CSysTray::ShutdownDevNotify()
+{
+    if (this->hDevNotify)
+        UnregisterDeviceNotification(this->hDevNotify);
+}
+
 /*++
 * @name NotifyIcon
 *
@@ -345,6 +364,7 @@ BOOL CSysTray::ProcessWindowMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM 
         InitIcons();
         SetTimer(1, 2000, NULL);
         RegisterShellHookWindow(hWnd);
+        InitDevNotify();
         return TRUE;
 
     case WM_TIMER:
@@ -362,6 +382,7 @@ BOOL CSysTray::ProcessWindowMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM 
         break;
 
     case WM_DESTROY:
+        ShutdownDevNotify();
         KillTimer(1);
         DeregisterShellHookWindow(hWnd);
         ShutdownIcons();
