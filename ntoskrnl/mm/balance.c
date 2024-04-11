@@ -122,7 +122,7 @@ MiTrimMemoryConsumer(ULONG Consumer, ULONG InitialTarget)
         /* Now swap the pages out */
         Status = MiMemoryConsumers[Consumer].Trim(Target, MmAvailablePages < MiMinimumAvailablePages, &NrFreedPages);
 
-        DPRINT("Trimming consumer %lu: Freed %lu pages with a target of %lu pages\n", Consumer, NrFreedPages, Target);
+        DPRINT1("Trimming consumer %lu: Freed %lu pages with a target of %lu pages\n", Consumer, NrFreedPages, Target);
 
         if (!NT_SUCCESS(Status))
         {
@@ -142,7 +142,7 @@ MmTrimUserMemory(ULONG Target, ULONG Priority, PULONG NrFreedPages)
 
     (*NrFreedPages) = 0;
 
-    DPRINT("MM BALANCER: %s\n", Priority ? "Paging out!" : "Removing access bit!");
+    DPRINT1("MM BALANCER: %s\n", Priority ? "Paging out!" : "Removing access bit!");
 
     FirstPage = MmGetLRUFirstUserPage();
     CurrentPage = FirstPage;
@@ -151,6 +151,7 @@ MmTrimUserMemory(ULONG Target, ULONG Priority, PULONG NrFreedPages)
         if (Priority)
         {
             Status = MmPageOutPhysicalAddress(CurrentPage);
+            DPRINT1("MmPageOutPhysicalAddress: 0x%lx\n", Status);
             if (NT_SUCCESS(Status))
             {
                 DPRINT("Succeeded\n");
@@ -249,6 +250,7 @@ MmTrimUserMemory(ULONG Target, ULONG Priority, PULONG NrFreedPages)
                 /* Nobody accessed this page since the last time we check. Time to clean up */
 
                 Status = MmPageOutPhysicalAddress(CurrentPage);
+                DPRINT1("MmPageOutPhysicalAddress: 0x%lx\n", Status);
                 if (NT_SUCCESS(Status))
                 {
                     if (CurrentPage == FirstPage)
@@ -256,7 +258,7 @@ MmTrimUserMemory(ULONG Target, ULONG Priority, PULONG NrFreedPages)
                         FirstPage = 0;
                     }
                 }
-                // DPRINT1("Paged-out one page: %s\n", NT_SUCCESS(Status) ? "Yes" : "No");
+                DPRINT1("Paged-out one page: %s\n", NT_SUCCESS(Status) ? "Yes" : "No");
             }
 
             /* Done for this page. */

@@ -5037,7 +5037,7 @@ MmCheckDirtySegment(
 
     ASSERT((Offset->QuadPart % PAGE_SIZE) == 0);
 
-    DPRINT("Checking segment for file %wZ at offset 0x%I64X.\n", &Segment->FileObject->FileName, Offset->QuadPart);
+    DPRINT1("Checking segment for file %wZ at offset 0x%I64X.\n", &Segment->FileObject->FileName, Offset->QuadPart);
 
     Entry = MmGetPageEntrySectionSegment(Segment, Offset);
     if (Entry == 0)

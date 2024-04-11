@@ -299,6 +299,8 @@ GetEntry:
     }
 
 WriteSegment:
+    DPRINT1("MmPageOutPhysicalAddress: WriteSegment\n");
+
     /* Now write this page to file, if needed */
     Segment = MmGetSectionAssociation(Page, &SegmentOffset);
     if (Segment)
