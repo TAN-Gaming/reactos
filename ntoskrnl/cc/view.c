@@ -558,6 +558,7 @@ CcRosTrimCache(
     KIRQL oldIrql;
     LIST_ENTRY FreeList;
     BOOLEAN FlushedPages = FALSE;
+    ULONG Refs;
 
     DPRINT("CcRosTrimCache(Target %lu)\n", Target);
 
@@ -571,16 +572,14 @@ retry:
     current_entry = VacbLruListHead.Flink;
     while (current_entry != &VacbLruListHead)
     {
-        ULONG Refs;
-
         current = CONTAINING_RECORD(current_entry,
                                     ROS_VACB,
                                     VacbLruListEntry);
 
         KeAcquireSpinLockAtDpcLevel(&current->SharedCacheMap->CacheMapLock);
 
-        /* Reference the VACB */
-        CcRosVacbIncRefCount(current);
+        /* Only keep iterating though the loop while the lock is held */
+        current_entry = current_entry->Flink;
 
         /* Check if it's mapped and not dirty */
         if (InterlockedCompareExchange((PLONG)&current->MappedCount, 0, 0) > 0 && !current->Dirty)
@@ -592,6 +591,9 @@ retry:
 #else
             ULONG i;
             PFN_NUMBER Page;
+
+            /* Keep a reference on the VACB */
+            CcRosVacbIncRefCount(current);
 
             /* We have to break these locks to call MmPageOutPhysicalAddress */
             KeReleaseSpinLockFromDpcLevel(&current->SharedCacheMap->CacheMapLock);
@@ -608,25 +610,24 @@ retry:
             /* Reacquire the locks */
             oldIrql = KeAcquireQueuedSpinLock(LockQueueMasterLock);
             KeAcquireSpinLockAtDpcLevel(&current->SharedCacheMap->CacheMapLock);
+
+            /* Dereference the VACB */
+            CcRosVacbDecRefCount(current);
 #endif
         }
 
-        /* Only keep iterating though the loop while the lock is held */
-        current_entry = current_entry->Flink;
-
-        /* Dereference the VACB */
-        Refs = CcRosVacbDecRefCount(current);
-
-        /* Check if we can free this entry now */
+        /* Check if we can free this VACB now */
+        Refs = CcRosVacbGetRefCount(current);
         if (Refs < 2)
         {
             ASSERT(!current->Dirty);
             ASSERT(!current->MappedCount);
             ASSERT(Refs == 1);
 
-            RemoveEntryList(&current->CacheMapVacbListEntry);
+            /* Unlink the VACB and mark for free */
             RemoveEntryList(&current->VacbLruListEntry);
             InitializeListHead(&current->VacbLruListEntry);
+            RemoveEntryList(&current->CacheMapVacbListEntry);
             InsertHeadList(&FreeList, &current->CacheMapVacbListEntry);
 
             /* Calculate how many pages we freed for Mm */
@@ -661,13 +662,13 @@ retry:
 
     while (!IsListEmpty(&FreeList))
     {
-        ULONG Refs;
-
         current_entry = RemoveHeadList(&FreeList);
         current = CONTAINING_RECORD(current_entry,
                                     ROS_VACB,
                                     CacheMapVacbListEntry);
+
         InitializeListHead(&current->CacheMapVacbListEntry);
+
         Refs = CcRosVacbDecRefCount(current);
         ASSERT(Refs == 0);
     }
