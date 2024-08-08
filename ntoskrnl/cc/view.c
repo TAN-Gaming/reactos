@@ -348,37 +348,27 @@ CcRosFlushDirtyPages (
                                     DirtyVacbListEntry);
         current_entry = current_entry->Flink;
 
-        CcRosVacbIncRefCount(current);
-
         SharedCacheMap = current->SharedCacheMap;
 
         /* When performing lazy write, don't handle temporary files */
         if (CalledFromLazy && BooleanFlagOn(SharedCacheMap->FileObject->Flags, FO_TEMPORARY_FILE))
-        {
-            CcRosVacbDecRefCount(current);
             continue;
-        }
 
         /* Don't attempt to lazy write the files that asked not to */
         if (CalledFromLazy && BooleanFlagOn(SharedCacheMap->Flags, WRITEBEHIND_DISABLED))
-        {
-            CcRosVacbDecRefCount(current);
             continue;
-        }
 
         ASSERT(current->Dirty);
 
         /* Do not lazy-write the same file concurrently. Fastfat ASSERTS on that */
         if (SharedCacheMap->Flags & SHARED_CACHE_MAP_IN_LAZYWRITE)
-        {
-            CcRosVacbDecRefCount(current);
             continue;
-        }
 
         SharedCacheMap->Flags |= SHARED_CACHE_MAP_IN_LAZYWRITE;
 
-        /* Keep a ref on the shared cache map */
+        /* Keep a ref on the shared cache map and the VACB */
         SharedCacheMap->OpenCount++;
+        CcRosVacbIncRefCount(current);
 
         KeReleaseQueuedSpinLock(LockQueueMasterLock, OldIrql);
 
