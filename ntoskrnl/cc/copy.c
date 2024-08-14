@@ -667,7 +667,7 @@ CcCopyWrite (
 
     /* Flush if needed */
     if (FileObject->Flags & FO_WRITE_THROUGH)
-        CcFlushCache(FileObject->SectionObjectPointer, FileOffset, Length, NULL);
+        CcpFlushFileCache(SharedCacheMap, FileOffset, Length, NULL);
 
     return TRUE;
 }
@@ -927,7 +927,7 @@ CcZeroData (
 
     /* Flush if needed */
     if (FileObject->Flags & FO_WRITE_THROUGH)
-        CcFlushCache(FileObject->SectionObjectPointer, StartOffset, EndOffset->QuadPart - StartOffset->QuadPart, NULL);
+        CcpFlushFileCache(SharedCacheMap, StartOffset, EndOffset->QuadPart - StartOffset->QuadPart, NULL);
 
     return TRUE;
 }

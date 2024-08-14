@@ -16,6 +16,7 @@
 #define TAG_SHARED_CACHE_MAP        'cScC'
 #define TAG_PRIVATE_CACHE_MAP       'cPcC'
 #define TAG_BCB                     'cBcC'
+#define TAG_FLUSH_QUEUE             'qFcC'
 
 /* Executive Tags */
 #define TAG_CALLBACK_ROUTINE_BLOCK  'brbC'

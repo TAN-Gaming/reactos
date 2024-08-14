@@ -561,7 +561,7 @@ CcSetDirtyPinnedData (
 
     if (!iBcb->Vacb->Dirty)
     {
-        CcRosMarkDirtyVacb(iBcb->Vacb);
+        CcpMarkDirtyVacb(iBcb->Vacb, TRUE, TRUE);
     }
 }
 
@@ -636,10 +636,10 @@ CcUnpinRepinnedBcb (
 
     if (WriteThrough)
     {
-        CcFlushCache(iBcb->Vacb->SharedCacheMap->FileObject->SectionObjectPointer,
-                     &iBcb->PFCB.MappedFileOffset,
-                     iBcb->PFCB.MappedLength,
-                     IoStatus);
+        CcpFlushFileCache(iBcb->Vacb->SharedCacheMap,
+                          &iBcb->PFCB.MappedFileOffset,
+                          iBcb->PFCB.MappedLength,
+                          IoStatus);
     }
     else
     {

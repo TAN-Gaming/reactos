@@ -40,7 +40,7 @@
 // Global Cc Data
 //
 extern ULONG CcRosTraceLevel;
-extern LIST_ENTRY DirtyVacbListHead;
+extern LIST_ENTRY CcDirtySharedCacheMapList;
 extern ULONG CcDirtyPageThreshold;
 extern ULONG CcTotalDirtyPages;
 extern LIST_ENTRY CcDeferredWrites;
@@ -193,7 +193,7 @@ typedef struct _ROS_SHARED_CACHE_MAP
     LIST_ENTRY CacheMapVacbListHead;
     BOOLEAN PinAccess;
     KSPIN_LOCK CacheMapLock;
-    KGUARDED_MUTEX FlushCacheLock;
+    BOOLEAN Dirty;
 #if DBG
     BOOLEAN Trace; /* enable extra trace output for this cache map and it's VACBs */
 #endif
@@ -215,8 +215,6 @@ typedef struct _ROS_VACB
     ULONG MappedCount;
     /* Entry in the list of VACBs for this shared cache map. */
     LIST_ENTRY CacheMapVacbListEntry;
-    /* Entry in the list of VACBs which are dirty. */
-    LIST_ENTRY DirtyVacbListEntry;
     /* Entry in the list of VACBs. */
     LIST_ENTRY VacbLruListEntry;
     /* Offset in the file which this view maps. */
@@ -282,6 +280,15 @@ typedef enum _WORK_QUEUE_FUNCTIONS
     SetDone = 4,
 } WORK_QUEUE_FUNCTIONS, *PWORK_QUEUE_FUNCTIONS;
 
+typedef struct _FLUSH_QUEUE_ITEM
+{
+    LONGLONG FileOffset;
+    ULONG Length;
+    PROS_VACB DirtyVacb;
+    LIST_ENTRY ItemListEntry;
+    BOOLEAN Success;
+} FLUSH_QUEUE_ITEM, *PFLUSH_QUEUE_ITEM;
+
 extern LAZY_WRITER LazyWriter;
 
 #define NODE_TYPE_DEFERRED_WRITE 0x02FC
@@ -308,12 +315,6 @@ CcMdlWriteComplete2(
     IN PFILE_OBJECT FileObject,
     IN PLARGE_INTEGER FileOffset,
     IN PMDL MdlChain
-);
-
-NTSTATUS
-CcRosFlushVacb(
-    _In_ PROS_VACB Vacb,
-    _Out_opt_ PIO_STATUS_BLOCK Iosb
 );
 
 NTSTATUS
@@ -356,13 +357,28 @@ NTAPI
 CcInitCacheZeroPage(VOID);
 
 VOID
-CcRosMarkDirtyVacb(
-    PROS_VACB Vacb);
+CcpUpdateDirtyFileCache(
+    _In_ PROS_SHARED_CACHE_MAP SharedCacheMap,
+    _In_ BOOLEAN LazyWrite,
+    _In_ BOOLEAN LockViews);
 
 VOID
-CcRosUnmarkDirtyVacb(
-    PROS_VACB Vacb,
-    BOOLEAN LockViews);
+CcpMarkDirtyVacb(
+    _In_ PROS_VACB Vacb,
+    _In_ BOOLEAN UpdateCacheMap,
+    _In_ BOOLEAN LockViews);
+
+VOID
+CcpUnmarkDirtyVacb(
+    _In_ PROS_VACB Vacb,
+    _In_ BOOLEAN LockViews);
+
+VOID
+CcpFlushFileCache(
+    _In_ PROS_SHARED_CACHE_MAP SharedCacheMap,
+    _In_opt_ PLARGE_INTEGER FileOffset,
+    _In_ ULONG Length,
+    _Out_opt_ PIO_STATUS_BLOCK IoStatus);
 
 NTSTATUS
 CcRosFlushDirtyPages(
@@ -371,12 +387,6 @@ CcRosFlushDirtyPages(
     BOOLEAN Wait,
     BOOLEAN CalledFromLazy
 );
-
-VOID
-CcRosDereferenceCache(PFILE_OBJECT FileObject);
-
-VOID
-CcRosReferenceCache(PFILE_OBJECT FileObject);
 
 NTSTATUS
 CcRosReleaseVacb(
