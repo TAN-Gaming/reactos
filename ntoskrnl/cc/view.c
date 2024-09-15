@@ -1162,8 +1162,7 @@ CcFlushCache (
         {
             if (vacb->Dirty)
             {
-                IO_STATUS_BLOCK VacbIosb = { 0 };
-                Status = CcRosFlushVacb(vacb, &VacbIosb);
+                Status = CcRosFlushVacb(vacb, NULL);
                 if (!NT_SUCCESS(Status))
                 {
                     CcRosReleaseVacb(SharedCacheMap, vacb, FALSE, FALSE);
@@ -1172,7 +1171,7 @@ CcFlushCache (
                 DirtyVacb = TRUE;
 
                 if (IoStatus)
-                    IoStatus->Information += VacbIosb.Information;
+                    IoStatus->Information += min(VACB_MAPPING_GRANULARITY, FlushEnd - FlushStart);
             }
 
             CcRosReleaseVacb(SharedCacheMap, vacb, FALSE, FALSE);
@@ -1180,27 +1179,27 @@ CcFlushCache (
 
         if (!DirtyVacb)
         {
-            IO_STATUS_BLOCK MmIosb;
             LARGE_INTEGER MmOffset;
+            ULONG MmLength;
 
             MmOffset.QuadPart = FlushStart;
 
             if (FlushEnd - (FlushEnd % VACB_MAPPING_GRANULARITY) <= FlushStart)
             {
                 /* The whole range fits within a VACB chunk. */
-                Status = MmFlushSegment(SectionObjectPointers, &MmOffset, FlushEnd - FlushStart, &MmIosb);
+                MmLength = FlushEnd - FlushStart;
             }
             else
             {
-                ULONG MmLength = VACB_MAPPING_GRANULARITY - (FlushStart % VACB_MAPPING_GRANULARITY);
-                Status = MmFlushSegment(SectionObjectPointers, &MmOffset, MmLength, &MmIosb);
+                MmLength = VACB_MAPPING_GRANULARITY - (FlushStart % VACB_MAPPING_GRANULARITY);
             }
 
+            Status = MmFlushSegment(SectionObjectPointers, &MmOffset, MmLength, NULL);
             if (!NT_SUCCESS(Status))
                 break;
 
             if (IoStatus)
-                IoStatus->Information += MmIosb.Information;
+                IoStatus->Information += MmLength;
 
             /* Update VDL */
             if (SharedCacheMap->ValidDataLength.QuadPart < FlushEnd)
