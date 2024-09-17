@@ -282,7 +282,27 @@ CcPurgeCacheSection (
     /* Now make sure that Mm doesn't hold some pages here. */
 purgeMm:
     if (Success)
-        Success = MmPurgeSegment(SectionObjectPointer, FileOffset, Length);
+    {
+        ULONG DirtyPages;
+
+        Success = MmPurgeSegment(SectionObjectPointer, FileOffset, Length, &DirtyPages);
+
+        /* Check the number of dirty pages purged by MM */
+        if (DirtyPages != 0 && SharedCacheMap)
+        {
+            KIRQL OldIrql;
+
+            OldIrql = KeAcquireQueuedSpinLock(LockQueueMasterLock);
+            KeAcquireSpinLockAtDpcLevel(&SharedCacheMap->CacheMapLock);
+
+            /* Update total dirty pages */
+            CcTotalDirtyPages -= DirtyPages;
+            SharedCacheMap->DirtyPages -= DirtyPages;
+
+            KeReleaseSpinLockFromDpcLevel(&SharedCacheMap->CacheMapLock);
+            KeReleaseQueuedSpinLock(LockQueueMasterLock, OldIrql);
+        }
+    }
 
     return Success;
 }

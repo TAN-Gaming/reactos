@@ -311,10 +311,10 @@ CcMdlWriteComplete2(
 );
 
 NTSTATUS
-CcRosFlushVacb(
+CcpFlushCacheBlock(
     _In_ PROS_VACB Vacb,
-    _Out_opt_ PIO_STATUS_BLOCK Iosb
-);
+    _In_ BOOLEAN OnDelete,
+    _Out_opt_ PULONG NumberOfPages);
 
 NTSTATUS
 CcRosGetVacb(
@@ -357,12 +357,19 @@ CcInitCacheZeroPage(VOID);
 
 VOID
 CcRosMarkDirtyVacb(
-    PROS_VACB Vacb);
+    PROS_VACB Vacb,
+    BOOLEAN LockViews);
 
 VOID
 CcRosUnmarkDirtyVacb(
     PROS_VACB Vacb,
     BOOLEAN LockViews);
+
+NTSTATUS
+CcpMarkCacheBlockDirty(
+    _In_ PROS_VACB Vacb,
+    _In_ ULONG VacbOffset,
+    _In_ ULONG Length);
 
 NTSTATUS
 CcRosFlushDirtyPages(
@@ -382,7 +389,6 @@ NTSTATUS
 CcRosReleaseVacb(
     PROS_SHARED_CACHE_MAP SharedCacheMap,
     PROS_VACB Vacb,
-    BOOLEAN Dirty,
     BOOLEAN Mapped
 );
 
