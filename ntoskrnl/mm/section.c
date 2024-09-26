@@ -4954,6 +4954,8 @@ MmFlushSegment(
             return Status;
     }
 
+    /* Assume success */
+    Status = STATUS_SUCCESS;
     if (Iosb)
         Iosb->Information = 0;
 
@@ -4961,9 +4963,7 @@ MmFlushSegment(
     if (!Segment)
     {
         /* Nothing to flush */
-        if (Iosb)
-            Iosb->Status = STATUS_SUCCESS;
-        return STATUS_SUCCESS;
+        goto Quit;
     }
 
     ASSERT(*Segment->Flags & MM_DATAFILE_SEGMENT);
@@ -4981,43 +4981,62 @@ MmFlushSegment(
         {
             MmUnlockSectionSegment(Segment);
             MmDereferenceSegment(Segment);
-            if (Iosb)
-            {
-                Iosb->Status = STATUS_SUCCESS;
-                Iosb->Information = 0;
-            }
-            return STATUS_SUCCESS;
+            goto Quit;
         }
 
         PCACHE_SECTION_PAGE_TABLE PageTable = RtlGetElementGenericTable(&Segment->PageTable, ElemCount - 1);
         FlushEnd.QuadPart = PageTable->FileOffset.QuadPart + _countof(PageTable->PageEntries) * PAGE_SIZE;
     }
 
-    FlushStart.QuadPart >>= PAGE_SHIFT;
-    FlushStart.QuadPart <<= PAGE_SHIFT;
-
     while (FlushStart.QuadPart < FlushEnd.QuadPart)
     {
-        ULONG_PTR Entry = MmGetPageEntrySectionSegment(Segment, &FlushStart);
+        LARGE_INTEGER PageOffset;
+        ULONG_PTR Entry;
+        ULONG Bytes;
+
+        /* Find byte offset of the page to flush */
+        PageOffset = FlushStart;
+        if (PageOffset.QuadPart % PAGE_SIZE != 0)
+        {
+            /* Round down to the nearest page start */
+            PageOffset.QuadPart >>= PAGE_SHIFT;
+            PageOffset.QuadPart <<= PAGE_SHIFT;
+        }
+
+        /* Calculate number of bytes to flush */
+        if (FlushEnd.QuadPart - (FlushEnd.QuadPart % PAGE_SIZE) <= FlushStart.QuadPart)
+        {
+            /* The whole range fits within a page chunk */
+            Bytes = FlushEnd.QuadPart - FlushStart.QuadPart;
+        }
+        else
+        {
+            Bytes = PAGE_SIZE - (FlushStart.QuadPart % PAGE_SIZE);
+        }
+
+        Entry = MmGetPageEntrySectionSegment(Segment, &PageOffset);
 
         if (IS_DIRTY_SSE(Entry))
         {
             MmCheckDirtySegment(Segment, &FlushStart, FALSE, FALSE);
 
+            /* Update the number of flushed bytes, if needed */
             if (Iosb)
-                Iosb->Information += PAGE_SIZE;
+                Iosb->Information += Bytes;
         }
 
-        FlushStart.QuadPart += PAGE_SIZE;
+        /* Go to the next page start */
+        FlushStart.QuadPart += Bytes;
     }
 
     MmUnlockSectionSegment(Segment);
     MmDereferenceSegment(Segment);
 
+Quit:
     if (Iosb)
-        Iosb->Status = STATUS_SUCCESS;
+        Iosb->Status = Status;
 
-    return STATUS_SUCCESS;
+    return Status;
 }
 
 _Requires_exclusive_lock_held_(Segment->Lock)
