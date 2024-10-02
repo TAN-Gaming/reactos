@@ -231,13 +231,6 @@ static GENERIC_MAPPING MmpSectionMapping =
 
 /* FUNCTIONS *****************************************************************/
 
-
-
-NTSTATUS
-NTAPI
-MiWritePage(PMM_SECTION_SEGMENT Segment,
-            LONGLONG SegOffset,
-            PFN_NUMBER Page)
 /*
  * FUNCTION: write a page for a section backed memory area.
  * PARAMETERS:
@@ -245,6 +238,13 @@ MiWritePage(PMM_SECTION_SEGMENT Segment,
  *       Offset - Offset of the page to write.
  *       Page - Page which contains the data to write.
  */
+NTSTATUS
+NTAPI
+MiWritePage(_In_ PMM_SECTION_SEGMENT Segment,
+            _In_ LONGLONG SegOffset,
+            _In_ PFN_NUMBER Page,
+            _In_ ULONG ByteOffset,
+            _In_ ULONG ByteCount)
 {
     NTSTATUS Status;
     IO_STATUS_BLOCK IoStatus;
@@ -254,10 +254,12 @@ MiWritePage(PMM_SECTION_SEGMENT Segment,
     PFILE_OBJECT FileObject = Segment->FileObject;
     LARGE_INTEGER FileOffset;
 
+    ASSERT(ByteOffset + ByteCount <= PAGE_SIZE);
+
     FileOffset.QuadPart = Segment->Image.FileOffset + SegOffset;
 
     RtlZeroMemory(MdlBase, sizeof(MdlBase));
-    MmInitializeMdl(Mdl, NULL, PAGE_SIZE);
+    MmInitializeMdl(Mdl, UlongToPtr(ByteOffset), ByteCount);
     MmBuildMdlFromPages(Mdl, &Page);
     Mdl->MdlFlags |= MDL_PAGES_LOCKED;
 
@@ -980,7 +982,7 @@ FreeSegmentPage(PMM_SECTION_SEGMENT Segment, PLARGE_INTEGER Offset)
 
     /* Write the page */
     if (IS_DIRTY_SSE(Entry))
-        MiWritePage(Segment, Offset->QuadPart, Page);
+        MiWritePage(Segment, Offset->QuadPart, Page, 0, PAGE_SIZE);
 
     MmReleasePageMemoryConsumer(MC_USER, Page);
 }
@@ -5121,7 +5123,7 @@ MmCheckDirtySegment(
             {
                 DPRINT("Writing page at offset %I64d for file %wZ, Pageout: %s\n",
                         Offset->QuadPart, &Segment->FileObject->FileName, PageOut ? "TRUE" : "FALSE");
-                Status = MiWritePage(Segment, Offset->QuadPart, Page);
+                Status = MiWritePage(Segment, Offset->QuadPart, Page, 0, PAGE_SIZE);
             }
 
             if (PageOut)
