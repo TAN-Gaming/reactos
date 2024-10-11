@@ -424,7 +424,7 @@ CcRosFlushDirtyPages (
             ULONG PagesFreed;
 
             /* How many pages did we free? */
-            PagesFreed = Iosb.Information / PAGE_SIZE;
+            PagesFreed = BYTES_TO_PAGES(Iosb.Information);
             (*Count) += PagesFreed;
 
             if (!Wait)
@@ -1155,9 +1155,22 @@ CcFlushCache (
      */
     while (FlushStart < FlushEnd)
     {
+        ULONG Bytes;
         BOOLEAN DirtyVacb = FALSE;
-        PROS_VACB vacb = CcRosLookupVacb(SharedCacheMap, FlushStart);
+        PROS_VACB vacb;
 
+        /* Calculate number of bytes to flush */
+        if (FlushEnd - (FlushEnd % VACB_MAPPING_GRANULARITY) <= FlushStart)
+        {
+            /* The whole range fits within a VACB chunk */
+            Bytes = FlushEnd - FlushStart;
+        }
+        else
+        {
+            Bytes = VACB_MAPPING_GRANULARITY - (FlushStart % VACB_MAPPING_GRANULARITY);
+        }
+
+        vacb = CcRosLookupVacb(SharedCacheMap, FlushStart);
         if (vacb != NULL)
         {
             if (vacb->Dirty)
@@ -1172,7 +1185,7 @@ CcFlushCache (
                 DirtyVacb = TRUE;
 
                 if (IoStatus)
-                    IoStatus->Information += VacbIosb.Information;
+                    IoStatus->Information += min(VacbIosb.Information, Bytes);
             }
 
             CcRosReleaseVacb(SharedCacheMap, vacb, FALSE, FALSE);
@@ -1185,36 +1198,22 @@ CcFlushCache (
 
             MmOffset.QuadPart = FlushStart;
 
-            if (FlushEnd - (FlushEnd % VACB_MAPPING_GRANULARITY) <= FlushStart)
-            {
-                /* The whole range fits within a VACB chunk. */
-                Status = MmFlushSegment(SectionObjectPointers, &MmOffset, FlushEnd - FlushStart, &MmIosb);
-            }
-            else
-            {
-                ULONG MmLength = VACB_MAPPING_GRANULARITY - (FlushStart % VACB_MAPPING_GRANULARITY);
-                Status = MmFlushSegment(SectionObjectPointers, &MmOffset, MmLength, &MmIosb);
-            }
-
+            Status = MmFlushSegment(SectionObjectPointers, &MmOffset, Bytes, &MmIosb);
             if (!NT_SUCCESS(Status))
                 break;
+
+            ASSERT(MmIosb.Information <= Bytes);
 
             if (IoStatus)
                 IoStatus->Information += MmIosb.Information;
 
             /* Update VDL */
-            if (SharedCacheMap->ValidDataLength.QuadPart < FlushEnd)
-                SharedCacheMap->ValidDataLength.QuadPart = FlushEnd;
+            if (SharedCacheMap->ValidDataLength.QuadPart < FlushStart + Bytes)
+                SharedCacheMap->ValidDataLength.QuadPart = FlushStart + Bytes;
         }
 
-        if (!NT_SUCCESS(RtlLongLongAdd(FlushStart, VACB_MAPPING_GRANULARITY, &FlushStart)))
-        {
-            /* We're at the end of file ! */
-            break;
-        }
-
-        /* Round down to next VACB start now */
-        FlushStart -= FlushStart % VACB_MAPPING_GRANULARITY;
+        /* Go to the next VACB start */
+        FlushStart += Bytes;
     }
 
     KeReleaseGuardedMutex(&SharedCacheMap->FlushCacheLock);
