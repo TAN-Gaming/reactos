@@ -368,28 +368,41 @@ CcRosFlushDirtyPages (
 
         ASSERT(current->Dirty);
 
-        /* Do not lazy-write the same file concurrently. Fastfat ASSERTS on that */
-        if (SharedCacheMap->Flags & SHARED_CACHE_MAP_IN_LAZYWRITE)
-        {
-            CcRosVacbDecRefCount(current);
-            continue;
-        }
-
-        SharedCacheMap->Flags |= SHARED_CACHE_MAP_IN_LAZYWRITE;
-
         /* Keep a ref on the shared cache map */
         SharedCacheMap->OpenCount++;
 
         KeReleaseQueuedSpinLock(LockQueueMasterLock, OldIrql);
+
+        /* Don't flush the same file cache concurrently (CORE-19664) */
+        if (!Wait)
+        {
+            Locked = KeTryToAcquireGuardedMutex(&SharedCacheMap->FlushCacheLock);
+            if (!Locked)
+            {
+                CcRosVacbDecRefCount(current);
+                OldIrql = KeAcquireQueuedSpinLock(LockQueueMasterLock);
+
+                if (--SharedCacheMap->OpenCount == 0)
+                    CcRosDeleteFileCache(SharedCacheMap->FileObject, SharedCacheMap, &OldIrql);
+
+                continue;
+            }
+        }
+        else
+        {
+            KeAcquireGuardedMutex(&SharedCacheMap->FlushCacheLock);
+        }
 
         Locked = SharedCacheMap->Callbacks->AcquireForLazyWrite(SharedCacheMap->LazyWriteContext, Wait);
         if (!Locked)
         {
             DPRINT("Not locked!");
             ASSERT(!Wait);
+
+            KeReleaseGuardedMutex(&SharedCacheMap->FlushCacheLock);
+
             CcRosVacbDecRefCount(current);
             OldIrql = KeAcquireQueuedSpinLock(LockQueueMasterLock);
-            SharedCacheMap->Flags &= ~SHARED_CACHE_MAP_IN_LAZYWRITE;
 
             if (--SharedCacheMap->OpenCount == 0)
                 CcRosDeleteFileCache(SharedCacheMap->FileObject, SharedCacheMap, &OldIrql);
@@ -402,14 +415,14 @@ CcRosFlushDirtyPages (
 
         SharedCacheMap->Callbacks->ReleaseFromLazyWrite(SharedCacheMap->LazyWriteContext);
 
+        KeReleaseGuardedMutex(&SharedCacheMap->FlushCacheLock);
+
         /* We release the VACB before acquiring the lock again, because
          * CcRosVacbDecRefCount might free the VACB, as CcRosFlushVacb dropped a
          * Refcount. Freeing must be done outside of the lock.
          * The refcount is decremented atomically. So this is OK. */
         CcRosVacbDecRefCount(current);
         OldIrql = KeAcquireQueuedSpinLock(LockQueueMasterLock);
-
-        SharedCacheMap->Flags &= ~SHARED_CACHE_MAP_IN_LAZYWRITE;
 
         if (--SharedCacheMap->OpenCount == 0)
             CcRosDeleteFileCache(SharedCacheMap->FileObject, SharedCacheMap, &OldIrql);
@@ -1146,6 +1159,7 @@ CcFlushCache (
         IoStatus->Information = 0;
     }
 
+    /* Don't flush the same file cache concurrently (CORE-19664) */
     KeAcquireGuardedMutex(&SharedCacheMap->FlushCacheLock);
 
     /*
