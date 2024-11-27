@@ -382,11 +382,31 @@ CcRosFlushDirtyPages (
 
         KeReleaseQueuedSpinLock(LockQueueMasterLock, OldIrql);
 
+        /* Make sure we don't race with CcFlushCache.
+         * FIXME: This is suboptimal. */
+        if (!CcRosAcquireFileCacheForFlush(SharedCacheMap, Wait))
+        {
+            ASSERT(!Wait);
+
+            CcRosVacbDecRefCount(current);
+            OldIrql = KeAcquireQueuedSpinLock(LockQueueMasterLock);
+            SharedCacheMap->Flags &= ~SHARED_CACHE_MAP_IN_LAZYWRITE;
+
+            /* We're flushing somewhere else, don't allow deleting here */
+            ASSERT(SharedCacheMap->OpenCount > 1);
+            SharedCacheMap->OpenCount--;
+
+            continue;
+        }
+
         Locked = SharedCacheMap->Callbacks->AcquireForLazyWrite(SharedCacheMap->LazyWriteContext, Wait);
         if (!Locked)
         {
             DPRINT("Not locked!");
             ASSERT(!Wait);
+
+            CcRosReleaseFileCacheFromFlush(SharedCacheMap);
+
             CcRosVacbDecRefCount(current);
             OldIrql = KeAcquireQueuedSpinLock(LockQueueMasterLock);
             SharedCacheMap->Flags &= ~SHARED_CACHE_MAP_IN_LAZYWRITE;
@@ -401,6 +421,8 @@ CcRosFlushDirtyPages (
         Status = CcRosFlushVacb(current, &Iosb);
 
         SharedCacheMap->Callbacks->ReleaseFromLazyWrite(SharedCacheMap->LazyWriteContext);
+
+        CcRosReleaseFileCacheFromFlush(SharedCacheMap);
 
         /* We release the VACB before acquiring the lock again, because
          * CcRosVacbDecRefCount might free the VACB, as CcRosFlushVacb dropped a
@@ -1145,7 +1167,9 @@ CcFlushCache (
         IoStatus->Information = 0;
     }
 
-    KeAcquireGuardedMutex(&SharedCacheMap->FlushCacheLock);
+    /* Don't flush the same file concurrently (CORE-19664).
+     * FIXME: This is suboptimal. */
+    CcRosAcquireFileCacheForFlush(SharedCacheMap, TRUE);
 
     /*
      * We flush the VACBs that we find here.
@@ -1216,7 +1240,7 @@ CcFlushCache (
         FlushStart -= FlushStart % VACB_MAPPING_GRANULARITY;
     }
 
-    KeReleaseGuardedMutex(&SharedCacheMap->FlushCacheLock);
+    CcRosReleaseFileCacheFromFlush(SharedCacheMap);
 
 quit:
     if (IoStatus)

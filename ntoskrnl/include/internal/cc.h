@@ -364,6 +364,30 @@ CcRosUnmarkDirtyVacb(
     PROS_VACB Vacb,
     BOOLEAN LockViews);
 
+FORCEINLINE
+BOOLEAN
+CcRosAcquireFileCacheForFlush(
+    _In_ PROS_SHARED_CACHE_MAP SharedCacheMap,
+    _In_ BOOLEAN Wait)
+{
+    if (!Wait)
+    {
+        return KeTryToAcquireGuardedMutex(&SharedCacheMap->FlushCacheLock);
+    }
+
+    KeAcquireGuardedMutex(&SharedCacheMap->FlushCacheLock);
+
+    return TRUE;
+}
+
+FORCEINLINE
+VOID
+CcRosReleaseFileCacheFromFlush(
+    _In_ PROS_SHARED_CACHE_MAP SharedCacheMap)
+{
+    KeReleaseGuardedMutex(&SharedCacheMap->FlushCacheLock);
+}
+
 NTSTATUS
 CcRosFlushDirtyPages(
     ULONG Target,
