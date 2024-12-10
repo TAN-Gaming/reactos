@@ -19,7 +19,9 @@ static const INFORMATION_CLASS_INFO PsProcessInfoClass[] =
     (
         PROCESS_BASIC_INFORMATION,
         ULONG,
-        ICIF_QUERY
+
+        /* NOTE: ICIF_QUERY_SIZE_VARIABLE is for PROCESS_EXTENDED_BASIC_INFORMATION support */
+        ICIF_QUERY | ICIF_QUERY_SIZE_VARIABLE
     ),
 
     /* ProcessQuotaLimits */

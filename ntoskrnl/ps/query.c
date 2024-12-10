@@ -104,16 +104,19 @@ NtQueryInformationProcess(
         /* Basic process information */
         case ProcessBasicInformation:
         {
-            PPROCESS_BASIC_INFORMATION ProcessBasicInfo = (PPROCESS_BASIC_INFORMATION)ProcessInformation;
+            PROCESS_EXTENDED_BASIC_INFORMATION ProcessBasicInfo;
+            BOOLEAN Extended;
 
-            if (ProcessInformationLength != sizeof(PROCESS_BASIC_INFORMATION))
+            if (ProcessInformationLength != sizeof(PROCESS_BASIC_INFORMATION) &&
+                ProcessInformationLength != sizeof(PROCESS_EXTENDED_BASIC_INFORMATION))
             {
                 Status = STATUS_INFO_LENGTH_MISMATCH;
                 break;
             }
 
             /* Set return length */
-            Length = sizeof(PROCESS_BASIC_INFORMATION);
+            Length = ProcessInformationLength;
+            Extended = (Length == sizeof(PROCESS_EXTENDED_BASIC_INFORMATION));
 
             /* Reference the process */
             Status = ObReferenceObjectByHandle(ProcessHandle,
@@ -124,19 +127,41 @@ NtQueryInformationProcess(
                                                NULL);
             if (!NT_SUCCESS(Status)) break;
 
+            RtlZeroMemory(&ProcessBasicInfo, sizeof(ProcessBasicInfo));
+
+            /* Get all the basic information from the EPROCESS/KPROCESS */
+            ProcessBasicInfo.BasicInfo.ExitStatus = Process->ExitStatus;
+            ProcessBasicInfo.BasicInfo.PebBaseAddress = Process->Peb;
+            ProcessBasicInfo.BasicInfo.AffinityMask = Process->Pcb.Affinity;
+            ProcessBasicInfo.BasicInfo.UniqueProcessId =
+                (ULONG_PTR)Process->UniqueProcessId;
+            ProcessBasicInfo.BasicInfo.InheritedFromUniqueProcessId =
+                (ULONG_PTR)Process->InheritedFromUniqueProcessId;
+            ProcessBasicInfo.BasicInfo.BasePriority = Process->Pcb.BasePriority;
+
+            /* Get additional information, if needed */
+            if (Extended)
+            {
+                /* NOTE: Ignored as input, written with structure size on output */
+                ProcessBasicInfo.Size = sizeof(ProcessBasicInfo);
+
+                /* Get all the flags from the EPROCESS */
+#if (NTDDI_VERSION >= NTDDI_LONGHORN)
+                ProcessBasicInfo.IsProtectedProcess = Process->ProtectedProcess;
+#endif
+#ifdef _WIN64
+                ProcessBasicInfo.IsWow64Process = (Process->Wow64Process ? 1 : 0);
+#endif
+                ProcessBasicInfo.IsProcessDeleting = Process->ProcessDelete;
+                ProcessBasicInfo.IsCrossSessionCreate = (Process->ProcessInSession ? 0 : 1);
+            }
+
             /* Protect writes with SEH */
             _SEH2_TRY
             {
-                /* Write all the information from the EPROCESS/KPROCESS */
-                ProcessBasicInfo->ExitStatus = Process->ExitStatus;
-                ProcessBasicInfo->PebBaseAddress = Process->Peb;
-                ProcessBasicInfo->AffinityMask = Process->Pcb.Affinity;
-                ProcessBasicInfo->UniqueProcessId = (ULONG_PTR)Process->
-                                                    UniqueProcessId;
-                ProcessBasicInfo->InheritedFromUniqueProcessId =
-                    (ULONG_PTR)Process->InheritedFromUniqueProcessId;
-                ProcessBasicInfo->BasePriority = Process->Pcb.BasePriority;
-
+                RtlCopyMemory(ProcessInformation,
+                              Extended ? (PVOID)&ProcessBasicInfo : (PVOID)&ProcessBasicInfo.BasicInfo,
+                              Length);
             }
             _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
             {
