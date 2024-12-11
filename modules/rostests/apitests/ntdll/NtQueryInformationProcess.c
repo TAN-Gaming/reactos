@@ -9,6 +9,22 @@
 #include "precomp.h"
 #include <internal/ps_i.h>
 
+/* FIXME: This should be available from the NDK */
+typedef struct _PROCESS_EXTENDED_BASIC_INFORMATION {
+    SIZE_T Size;
+    PROCESS_BASIC_INFORMATION BasicInfo;
+    _ANONYMOUS_UNION union {
+        ULONG Flags;
+        _ANONYMOUS_STRUCT struct {
+            ULONG IsProtectedProcess:1;
+            ULONG IsWow64Process:1;
+            ULONG IsProcessDeleting:1;
+            ULONG IsCrossSessionCreate:1;
+            ULONG SpareBits:28;
+        } DUMMYSTRUCTNAME;
+    } DUMMYUNIONNAME;
+} PROCESS_EXTENDED_BASIC_INFORMATION, *PPROCESS_EXTENDED_BASIC_INFORMATION;
+
 static LARGE_INTEGER TestStartTime;
 
 static
@@ -184,6 +200,224 @@ Test_ProcessTimes(void)
 
     /* TODO: Test ExitTime on a terminated process */
 #undef SPIN_TIME
+}
+
+static
+void
+Test_ProcessBasicInformation(void)
+{
+    NTSTATUS Status;
+    ULONG Length;
+    PROCESS_BASIC_INFORMATION BasicInfo;
+    PROCESS_BASIC_INFORMATION BasicInfo2;
+    SIZE_T MatchBytes;
+
+    /* Everything is NULL */
+    Status = NtQueryInformationProcess(NULL,
+                                       ProcessBasicInformation,
+                                       NULL,
+                                       0,
+                                       NULL);
+    ok_hex(Status, STATUS_INFO_LENGTH_MISMATCH);
+
+    /* Right size, invalid process handle */
+    Status = NtQueryInformationProcess(NULL,
+                                       ProcessBasicInformation,
+                                       NULL,
+                                       sizeof(PROCESS_BASIC_INFORMATION),
+                                       NULL);
+    ok_hex(Status, STATUS_INVALID_HANDLE);
+
+    /* Valid process handle, no buffer */
+    Status = NtQueryInformationProcess(NtCurrentProcess(),
+                                       ProcessBasicInformation,
+                                       NULL,
+                                       0,
+                                       NULL);
+    ok_hex(Status, STATUS_INFO_LENGTH_MISMATCH);
+
+    /* Unaligned buffer, wrong size */
+    Status = NtQueryInformationProcess(NtCurrentProcess(),
+                                       ProcessBasicInformation,
+                                       (PVOID)2,
+                                       0,
+                                       NULL);
+    ok_hex(Status, STATUS_INFO_LENGTH_MISMATCH);
+
+    /* Unaligned buffer, correct size */
+    Status = NtQueryInformationProcess(NtCurrentProcess(),
+                                       ProcessBasicInformation,
+                                       (PVOID)2,
+                                       sizeof(PROCESS_BASIC_INFORMATION),
+                                       NULL);
+    ok_hex(Status, STATUS_DATATYPE_MISALIGNMENT);
+
+    /* Buffer too small */
+    Status = NtQueryInformationProcess(NtCurrentProcess(),
+                                       ProcessBasicInformation,
+                                       NULL,
+                                       sizeof(PROCESS_BASIC_INFORMATION) - 1,
+                                       NULL);
+    ok_hex(Status, STATUS_INFO_LENGTH_MISMATCH);
+
+    /* Right buffer size but NULL pointer */
+    Status = NtQueryInformationProcess(NtCurrentProcess(),
+                                       ProcessBasicInformation,
+                                       NULL,
+                                       sizeof(PROCESS_BASIC_INFORMATION),
+                                       NULL);
+    ok_hex(Status, STATUS_ACCESS_VIOLATION);
+
+    /* Buffer too large */
+    Status = NtQueryInformationProcess(NtCurrentProcess(),
+                                       ProcessBasicInformation,
+                                       NULL,
+                                       sizeof(PROCESS_BASIC_INFORMATION) + 1,
+                                       NULL);
+    ok_hex(Status, STATUS_INFO_LENGTH_MISMATCH);
+
+    /* Buffer too small, ask for length */
+    Length = 0x55555555;
+    Status = NtQueryInformationProcess(NtCurrentProcess(),
+                                       ProcessBasicInformation,
+                                       NULL,
+                                       sizeof(PROCESS_BASIC_INFORMATION) - 1,
+                                       &Length);
+    ok_hex(Status, STATUS_INFO_LENGTH_MISMATCH);
+    ok_dec(Length, 0x55555555);
+
+    /* Valid parameters, no return length */
+    RtlFillMemory(&BasicInfo, sizeof(BasicInfo), 0x55);
+    Status = NtQueryInformationProcess(NtCurrentProcess(),
+                                       ProcessBasicInformation,
+                                       &BasicInfo,
+                                       sizeof(PROCESS_BASIC_INFORMATION),
+                                       NULL);
+    ok_hex(Status, STATUS_SUCCESS);
+
+    /* Again, this time with a return length */
+    Length = 0x55555555;
+    RtlFillMemory(&BasicInfo2, sizeof(BasicInfo2), 0x66);
+    Status = NtQueryInformationProcess(NtCurrentProcess(),
+                                       ProcessBasicInformation,
+                                       &BasicInfo2,
+                                       sizeof(PROCESS_BASIC_INFORMATION),
+                                       &Length);
+    ok_hex(Status, STATUS_SUCCESS);
+    ok_dec(Length, sizeof(PROCESS_BASIC_INFORMATION));
+
+    /* Compare the two returned data */
+    MatchBytes = RtlCompareMemory(&BasicInfo, &BasicInfo2, sizeof(PROCESS_BASIC_INFORMATION));
+    ok_dec(MatchBytes, sizeof(PROCESS_BASIC_INFORMATION));
+
+    /* Trace the returned data */
+    trace("ExitStatus = %lx\n", BasicInfo.ExitStatus);
+    trace("PebBaseAddress = %p\n", BasicInfo.PebBaseAddress);
+    trace("AffinityMask = %Ix\n", BasicInfo.AffinityMask);
+    trace("BasePriority = %ld\n", BasicInfo.BasePriority);
+    trace("UniqueProcessId = %Iu\n", BasicInfo.UniqueProcessId);
+    trace("InheritedFromUniqueProcessId = %Iu\n", BasicInfo.InheritedFromUniqueProcessId);
+}
+
+static
+void
+Test_ProcessExtendedBasicInformation(void)
+{
+    NTSTATUS Status;
+    ULONG Length;
+    PROCESS_EXTENDED_BASIC_INFORMATION BasicInfoEx;
+    PROCESS_EXTENDED_BASIC_INFORMATION BasicInfoEx2;
+    SIZE_T MatchBytes;
+
+    /* Right size, invalid process handle */
+    Status = NtQueryInformationProcess(NULL,
+                                       ProcessBasicInformation,
+                                       NULL,
+                                       sizeof(PROCESS_EXTENDED_BASIC_INFORMATION),
+                                       NULL);
+    ok_hex(Status, STATUS_INVALID_HANDLE);
+
+    /* Unaligned buffer, correct size */
+    Status = NtQueryInformationProcess(NtCurrentProcess(),
+                                       ProcessBasicInformation,
+                                       (PVOID)2,
+                                       sizeof(PROCESS_EXTENDED_BASIC_INFORMATION),
+                                       NULL);
+    ok_hex(Status, STATUS_DATATYPE_MISALIGNMENT);
+
+    /* Buffer too small */
+    Status = NtQueryInformationProcess(NtCurrentProcess(),
+                                       ProcessBasicInformation,
+                                       NULL,
+                                       sizeof(PROCESS_EXTENDED_BASIC_INFORMATION) - 1,
+                                       NULL);
+    ok_hex(Status, STATUS_INFO_LENGTH_MISMATCH);
+
+    /* Right buffer size but NULL pointer */
+    Status = NtQueryInformationProcess(NtCurrentProcess(),
+                                       ProcessBasicInformation,
+                                       NULL,
+                                       sizeof(PROCESS_EXTENDED_BASIC_INFORMATION),
+                                       NULL);
+    ok_hex(Status, STATUS_ACCESS_VIOLATION);
+
+    /* Buffer too large */
+    Status = NtQueryInformationProcess(NtCurrentProcess(),
+                                       ProcessBasicInformation,
+                                       NULL,
+                                       sizeof(PROCESS_EXTENDED_BASIC_INFORMATION) + 1,
+                                       NULL);
+    ok_hex(Status, STATUS_INFO_LENGTH_MISMATCH);
+
+    /* Buffer too small, ask for length */
+    Length = 0x55555555;
+    Status = NtQueryInformationProcess(NtCurrentProcess(),
+                                       ProcessBasicInformation,
+                                       NULL,
+                                       sizeof(PROCESS_EXTENDED_BASIC_INFORMATION) - 1,
+                                       &Length);
+    ok_hex(Status, STATUS_INFO_LENGTH_MISMATCH);
+    ok_dec(Length, 0x55555555);
+
+    /* Valid parameters, no return length */
+    RtlFillMemory(&BasicInfoEx, sizeof(BasicInfoEx), 0x55);
+    Status = NtQueryInformationProcess(NtCurrentProcess(),
+                                       ProcessBasicInformation,
+                                       &BasicInfoEx,
+                                       sizeof(PROCESS_EXTENDED_BASIC_INFORMATION),
+                                       NULL);
+    ok_hex(Status, STATUS_SUCCESS);
+    ok_dec(BasicInfoEx.Size, sizeof(PROCESS_EXTENDED_BASIC_INFORMATION));
+
+    /* Again, this time with a return length */
+    Length = 0x55555555;
+    RtlFillMemory(&BasicInfoEx2, sizeof(BasicInfoEx2), 0x66);
+    Status = NtQueryInformationProcess(NtCurrentProcess(),
+                                       ProcessBasicInformation,
+                                       &BasicInfoEx2,
+                                       sizeof(PROCESS_EXTENDED_BASIC_INFORMATION),
+                                       &Length);
+    ok_hex(Status, STATUS_SUCCESS);
+    ok_dec(Length, sizeof(PROCESS_EXTENDED_BASIC_INFORMATION));
+    ok_dec(BasicInfoEx2.Size, sizeof(PROCESS_EXTENDED_BASIC_INFORMATION));
+
+    /* Compare the two returned data */
+    MatchBytes = RtlCompareMemory(&BasicInfoEx, &BasicInfoEx2, sizeof(PROCESS_EXTENDED_BASIC_INFORMATION));
+    ok_dec(MatchBytes, sizeof(PROCESS_EXTENDED_BASIC_INFORMATION));
+
+    /* Trace the returned data */
+    trace("Size = %Iu\n", BasicInfoEx.Size);
+    trace("BasicInfo.ExitStatus = %lx\n", BasicInfoEx.BasicInfo.ExitStatus);
+    trace("BasicInfo.PebBaseAddress = %p\n", BasicInfoEx.BasicInfo.PebBaseAddress);
+    trace("BasicInfo.AffinityMask = %Ix\n", BasicInfoEx.BasicInfo.AffinityMask);
+    trace("BasicInfo.BasePriority = %ld\n", BasicInfoEx.BasicInfo.BasePriority);
+    trace("BasicInfo.UniqueProcessId = %Iu\n", BasicInfoEx.BasicInfo.UniqueProcessId);
+    trace("BasicInfo.InheritedFromUniqueProcessId = %Iu\n", BasicInfoEx.BasicInfo.InheritedFromUniqueProcessId);
+    trace("Flags = %lx\n", BasicInfoEx.Flags);
+    trace("IsProtectedProcess = %d\n", BasicInfoEx.IsProtectedProcess);
+    trace("IsWow64Process = %d\n", BasicInfoEx.IsWow64Process);
+    trace("IsProcessDeleting = %d\n", BasicInfoEx.IsProcessDeleting);
+    trace("IsCrossSessionCreate = %d\n", BasicInfoEx.IsCrossSessionCreate);
 }
 
 static
@@ -376,6 +610,8 @@ START_TEST(NtQueryInformationProcess)
     ok_hex(Status, STATUS_SUCCESS);
 
     Test_ProcessTimes();
+    Test_ProcessBasicInformation();
+    Test_ProcessExtendedBasicInformation();
     Test_ProcessPriorityClassAlignment();
     Test_ProcessWx86Information();
     Test_ProcQueryAlignmentProbe();
