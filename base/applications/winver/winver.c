@@ -4,16 +4,13 @@
  * FILE:            base/applications/winver/winver.c
  */
 
-#include <stdarg.h>
-#include <windef.h>
-#include <winbase.h>
-#include <winuser.h>
-#include <commctrl.h>
-#include <shellapi.h>
+#include "winver_exe.h"
 
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLine, int nCmdShow)
 {
     INITCOMMONCONTROLSEX iccx;
+    PWINVER_OS_INFO OSInfo;
+    int Ret;
 
     UNREFERENCED_PARAMETER(hInstance);
     UNREFERENCED_PARAMETER(hPrevInstance);
@@ -25,5 +22,14 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLi
     iccx.dwICC = ICC_STANDARD_CLASSES | ICC_WIN95_CLASSES;
     InitCommonControlsEx(&iccx);
 
-    return ShellAboutW(NULL, L"ReactOS", NULL, NULL);
+    OSInfo = Winver_GetOSInfo();
+
+    Ret = ShellAboutW(NULL,
+                      OSInfo ? OSInfo->pszName : L"ReactOS",
+                      OSInfo ? OSInfo->pszCompatInfo : NULL,
+                      NULL);
+
+    Winver_FreeOSInfo(OSInfo);
+
+    return Ret;
 }
